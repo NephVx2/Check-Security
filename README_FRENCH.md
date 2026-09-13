@@ -13,6 +13,7 @@ Un audit de securite complet et non invasif pour Windows 11 — 22 sections couv
 ## Sommaire
 
 - [Presentation](#presentation)
+- [Captures d'ecran](#captures-decran)
 - [Comment fonctionne le score](#comment-fonctionne-le-score)
 - [Les 22 sections](#les-22-sections)
 - [Historique et detection de regression](#historique-et-detection-de-regression)
@@ -33,6 +34,17 @@ Un audit de securite complet et non invasif pour Windows 11 — 22 sections couv
 Il est entierement **en lecture seule**. Aucune verification ne modifie un parametre, n'arrete un service, ni n'ecrit dans le registre en dehors de ses propres fichiers de rapport/historique — il ne fait que lire et rapporter.
 
 Chaque constat est enregistre avec une categorie, un statut (`OK` / `WARN` / `FAIL` / `INFO`), et un detail en langage clair. L'ensemble se resume en un **score pondere sur 100**, et chaque run est compare au precedent pour faire ressortir ce qui a change.
+
+---
+
+## Captures d'ecran
+
+<p align="center">
+  <img src="screenshots/01-banner-sysinfo.png" alt="Banniere console et section Informations systeme" width="800"><br>
+  <img src="screenshots/06-html-report.png" alt="Vue d'ensemble du rapport HTML" width="800">
+</p>
+
+Davantage dans [`screenshots/`](screenshots/) — sortie console section par section, et le rapport HTML complet.
 
 ---
 
@@ -79,6 +91,21 @@ L'intention : un `FAIL` sur BitLocker ou l'antivirus doit peser plus lourd qu'un
 Infos systeme + signature Authenticode du script lui-meme ; anciennete du dernier patch (WARN >30 jours, FAIL >60) ; statut du pare-feu par profil et classification des regles par editeur (signe Microsoft → INFO, tiers/non signe → WARN) ; protection en temps reel Defender, anciennete du dernier scan (WARN >7 jours, FAIL >30), historique des detections de menaces sur 30 jours ; comptes locaux, politique de mot de passe, et le compte Administrator integre (RID-500) specifiquement.
 </details>
 
+### Politique de mot de passe, en detail
+
+**Ce controle verifie la politique locale que Windows imposerait lors d'un *futur* changement de mot de passe — pas ton mot de passe actuel.** `Minimum length required by local policy: 0 characters` (la valeur par defaut Windows a l'installation) ne veut pas dire que ton mot de passe actuel fait 0 caractere, ni qu'il a un probleme — ca veut dire que si le mot de passe de ce compte etait change demain, Windows n'imposerait aucun minimum. Tu peux tres bien avoir un mot de passe long et solide en place actuellement malgre une politique permissive ici ; le script le precise explicitement dans le detail de chaque resultat.
+
+| Controle | Ce qu'il rapporte |
+|---|---|
+| **Longueur minimale** | `WARN` en dessous de 12 caracteres — voir ci-dessous pourquoi |
+| **Age maximal / minimal du mot de passe** | Informatif — a quelle frequence Windows forcerait un changement, et le delai minimal avant de pouvoir en rechanger |
+| **Seuil de verrouillage** | `WARN` si desactive (`0` tentative) — aucun verrouillage automatique apres des echecs de connexion repetes |
+| **Duree de verrouillage** | `WARN` si configuree mais en dessous de 5 minutes — suffisant pour freiner des salves rapides de force brute |
+
+**Pourquoi 12 caracteres precisement ?** C'est la recommandation actuelle la plus repandue (NIST SP 800-63B, CISA, ANSSI) — l'ancien standard "8 caracteres" date d'une epoque ou le craquage hors-ligne etait bien plus lent. Sur du materiel GPU moderne, un hash NTLM a 8 caracteres — complexe ou non — peut tomber en force brute en quelques heures ; chaque caractere supplementaire multiplie l'espace de recherche par environ 95 (la plage ASCII imprimable). 12 est a peu pres le point ou meme une attaque hors-ligne soutenue cesse d'etre rentable, d'ou le glissement general (NIST inclus) de la "complexite obligatoire" vers la "longueur d'abord".
+
+Pour relever le seuil : `net accounts /minpwlen:12` (ajuste le chiffre a ta convenance). C'est un reglage de politique, pas la correction de quelque chose d'activement casse — traite un `WARN` ici comme une recommandation, pas comme une erreur.
+
 <details>
 <summary><strong>6–10 · UAC, BitLocker, Reseau, Services, Journaux d'audit</strong></summary>
 
@@ -116,6 +143,8 @@ SCHANNEL est le composant Windows bas niveau par lequel passe toute connexion TL
 | **Longueur minimale de cle Diffie-Hellman** | En dessous de 2048 bits, une connexion est vulnerable a une degradation type **Logjam** |
 | **Strong Crypto .NET Framework** | Sans ca, une application .NET peut contourner tous les reglages ci-dessus et negocier le TLS via sa propre pile obsolete |
 
+<p align="center"><img src="screenshots/03-tls-schannel.png" alt="Sortie console de la section TLS/SCHANNEL" width="700"></p>
+
 POODLE, BEAST et Logjam ne sont pas des menaces theoriques — ce sont des attaques nommees et pratiques contre exactement les reglages par defaut que Windows continue d'expedier tant que personne ne les desactive explicitement. Une machine jamais touchee affichera la plupart de cette section en `WARN` ou en `INFO` ("valeur par defaut Windows") — c'est attendu, pas un bug de l'audit.
 
 **Check-Security se contente de lire cet etat — il n'ecrit jamais dans le registre.** Si la Section 20 remonte des `WARN`, c'est un constat, pas une correction. Pour durcir reellement TLS/SCHANNEL sur la machine, lance le script complementaire **[Harden-TLS](https://github.com/NephVx2/Harden-TLS)** (meme auteur, meme suite), puis relance Check-Security ensuite pour confirmer que le changement a bien pris effet.
@@ -147,6 +176,8 @@ Chaque run ecrit son score dans un fichier d'historique glissant (20 derniers ru
 C'est un `[string[]]`, donc on peut passer une ou plusieurs valeurs, separees par des virgules. Une section s'execute si *au moins une* de ses propres categories correspond partiellement a *au moins une* des valeurs passees (`-like` dans les deux sens), donc `-Category "TLS"` matche aussi la categorie `TLS/SCHANNEL`. Les valeurs acceptees sont celles du tableau de poids par categorie plus haut, plus quelques categories de controles sans poids personnalise (`System`, `Updates`, `UAC`, `Audit`, `Scheduled Tasks`, `UEFI Security`, `Windows Hello`, `Defender`) — voir l'aide integree du script (`Get-Help .\Check-Security.ps1 -Full`) pour la liste exacte sous `-Category`.
 
 Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages entre des sections qui ne tournent pas forcement ensemble, donc ils sont toujours calcules quel que soit le `-Category` passe — le filtre ne laisse jamais l'en-tete du rapport HTML ou le controle Windows Hello sans donnees.
+
+<p align="center"><img src="screenshots/04-run-category.png" alt="Sortie console d'un run filtre par -Category" width="700"></p>
 
 ---
 
