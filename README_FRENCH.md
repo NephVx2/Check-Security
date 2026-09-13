@@ -6,6 +6,8 @@ Un audit de securite complet et non invasif pour Windows 11 — 22 sections couv
 
 > Rien n'est verifie sur la base d'un nom. Les certificats racine de confiance sont valides par empreinte SHA-1/SHA-256 par rapport a une liste blanche verifiee manuellement — jamais par leur nom (Subject CN), que n'importe quel certificat auto-signe malveillant pourrait copier. Le modele de score lui-meme a deja ete entierement reconstruit une fois, apres que la version originale ait produit un score de 1/100 sur une machine pourtant bien durcie.
 
+**A partir de la v5.1.0, le script lui-meme (console, rapports HTML/TXT/JSON/CSV, noms de categories, valeurs de `-Category`) est entierement en anglais** — ce README reste en francais, mais les libelles reellement affiches par le script (ex. "Critical points", "BitLocker") sont ceux en anglais. Quelques controles dont l'*entree* est Windows lui-meme — `auditpol`, `vssadmin`, `wbadmin` — savent lire les formulations anglaises ET francaises que ces commandes peuvent renvoyer, donc le script continue de fonctionner correctement sur un Windows en francais, pas seulement en anglais.
+
 ---
 
 ## Sommaire
@@ -14,7 +16,7 @@ Un audit de securite complet et non invasif pour Windows 11 — 22 sections couv
 - [Comment fonctionne le score](#comment-fonctionne-le-score)
 - [Les 22 sections](#les-22-sections)
 - [Historique et detection de regression](#historique-et-detection-de-regression)
-- [Limitation connue : filtre -Category](#limitation-connue--filtre--category)
+- [Utiliser le filtre `-Category`](#utiliser-le-filtre--category)
 - [Prerequis](#prerequis)
 - [Premier lancement](#premier-lancement-pas-a-pas)
 - [Parametres en ligne de commande](#parametres-en-ligne-de-commande)
@@ -54,16 +56,16 @@ Ceci est invariant au nombre de controles present dans chaque categorie, et un s
 
 **Poids par categorie** (les categories non listees ont un poids par defaut de 1.0) :
 
-| Categorie | Poids | Categorie | Poids |
+| Categorie (valeur reelle, en anglais) | Poids | Categorie (valeur reelle, en anglais) | Poids |
 |---|---|---|---|
-| Antivirus | 1.6 | Certificats | 1.3 |
-| BitLocker | 1.6 | Pare-feu | 1.4 |
-| VBS | 1.5 | Reseau | 1.4 |
-| Sauvegarde | 1.5 | TLS/SCHANNEL | 1.4 |
-| Politique MDP | 1.3 | Durcissement | 1.4 |
-| Comptes | 1.2 | Defender | 1.1 |
-| Services | 0.8 | Demarrage | 0.7 |
-| Logiciels | 0.5 | | |
+| Antivirus | 1.6 | Certificates | 1.3 |
+| BitLocker | 1.6 | Firewall | 1.4 |
+| VBS | 1.5 | Network | 1.4 |
+| Backup | 1.5 | TLS/SCHANNEL | 1.4 |
+| Password Policy | 1.3 | Hardening | 1.4 |
+| Accounts | 1.2 | Defender | 1.1 |
+| Services | 0.8 | Startup | 0.7 |
+| Software | 0.5 | | |
 
 L'intention : un `FAIL` sur BitLocker ou l'antivirus doit peser plus lourd qu'un `FAIL` sur "logiciels installes" — les poids codent ce jugement explicitement plutot que de laisser chaque controle avoir la meme importance par accident.
 
@@ -98,8 +100,25 @@ Exclusions de chemin/extension/processus Defender (signalees si trop larges) ; e
 <details>
 <summary><strong>20–22 · Suites TLS/chiffrement, Pilotes vulnerables, Shadow Copy/VSS</strong></summary>
 
-TLS 1.0/1.1 desactives et TLS 1.2/1.3 actives au niveau SCHANNEL (une cle de registre absente signifie que les valeurs par defaut de Windows s'appliquent — rapporte en INFO, jamais suppose sans risque silencieusement) ; suites de chiffrement faibles (RC4, 3DES, DES, NULL, EXPORT) si une politique de chiffrement personnalisee est en vigueur ; pilotes verifies contre la liste de blocage HVCI de Microsoft et pilotes recemment installes ; service Volume Shadow Copy et points de restauration existants (pertinent pour la recuperation apres ransomware).
+**TLS/SCHANNEL** — cinq controles independants, detailles juste apres le tableau : etat des protocoles (TLS 1.0/1.1 desactives, TLS 1.2/1.3 actives), une politique GPO forcant l'ordre des suites de chiffrement si elle existe, les chiffrements legacy individuels (RC4/DES/RC2/3DES/NULL) desactives au niveau registre, les algorithmes de hachage faibles (MD5/SHA-1), la longueur minimale de cle Diffie-Hellman, et le Strong Crypto .NET Framework sur chaque installation .NET reellement presente. **Pilotes** verifies contre la liste de blocage HVCI de Microsoft et pilotes recemment installes. **Shadow Copy/VSS** — service Volume Shadow Copy et points de restauration existants (pertinent pour la recuperation apres ransomware).
 </details>
+
+### TLS/SCHANNEL, en detail
+
+SCHANNEL est le composant Windows bas niveau par lequel passe toute connexion TLS/SSL sur la machine — RDP, LDAPS, IIS, la plupart des applications .NET, et beaucoup de logiciels tiers qui n'embarquent pas leur propre pile TLS. La Section 20 lit son etat sur cinq surfaces de registre independantes :
+
+| Controle | Ce que ca signifie si c'est faible |
+|---|---|
+| **Protocoles** (TLS 1.0/1.1/1.2/1.3) | TLS 1.0/1.1 sont obsoletes et vulnerables a **POODLE**/**BEAST** — ils doivent etre desactives, cote client comme cote serveur |
+| **Ordre des suites de chiffrement (GPO)** | Une Group Policy de domaine ou locale peut forcer une liste de suites precise ; si elle existe, elle ne doit pas contenir RC4, 3DES, DES, NULL ou EXPORT |
+| **Chiffrements legacy individuels** | RC4, DES, RC2, Triple DES 168 et NULL peuvent chacun etre desactives independamment au niveau registre — le mecanisme reellement utilise hors domaine, distinct du controle GPO ci-dessus |
+| **Algorithmes de hachage faibles** | MD5 et SHA-1 sont encore acceptes par SCHANNEL sauf desactivation explicite |
+| **Longueur minimale de cle Diffie-Hellman** | En dessous de 2048 bits, une connexion est vulnerable a une degradation type **Logjam** |
+| **Strong Crypto .NET Framework** | Sans ca, une application .NET peut contourner tous les reglages ci-dessus et negocier le TLS via sa propre pile obsolete |
+
+POODLE, BEAST et Logjam ne sont pas des menaces theoriques — ce sont des attaques nommees et pratiques contre exactement les reglages par defaut que Windows continue d'expedier tant que personne ne les desactive explicitement. Une machine jamais touchee affichera la plupart de cette section en `WARN` ou en `INFO` ("valeur par defaut Windows") — c'est attendu, pas un bug de l'audit.
+
+**Check-Security se contente de lire cet etat — il n'ecrit jamais dans le registre.** Si la Section 20 remonte des `WARN`, c'est un constat, pas une correction. Pour durcir reellement TLS/SCHANNEL sur la machine, lance le script complementaire **[Harden-TLS](https://github.com/NephVx2/Harden-TLS)** (meme auteur, meme suite), puis relance Check-Security ensuite pour confirmer que le changement a bien pris effet.
 
 **Validation de confiance des certificats, en detail :** la liste blanche des certificats racine "connus comme sains" est indexee par **empreinte SHA-1/SHA-256**, pas par Subject CN — un choix de conception delibere explique directement dans le script : le nom affiche d'un certificat n'est qu'une chaine de caracteres, et n'importe quel certificat auto-signe pourrait definir son CN sur `"DigiCert Trusted Root G4"`. Une correspondance par nom serait trivialement contournable ; une correspondance par empreinte signifie qu'une entree ne peut etre legitime que si quelqu'un a reellement verifie ce certificat precis.
 
@@ -116,13 +135,18 @@ Chaque run ecrit son score dans un fichier d'historique glissant (20 derniers ru
 
 ---
 
-## Limitation connue : filtre `-Category`
+## Utiliser le filtre `-Category`
 
-Le script accepte `-Category "BitLocker","TLS/SCHANNEL"` et son texte d'aide le decrit comme un moyen de ne relancer que des sections specifiques apres un correctif cible, au lieu de l'audit complet d'environ 3 minutes. La fonction utilitaire sous-jacente (`ShouldRunSection`) existe, est testee unitairement, et passe ses propres assertions de self-test.
+`-Category` ne relance que les sections correspondantes, au lieu de l'audit complet d'environ 3 minutes — pratique juste apres un correctif cible (BitLocker active, Harden-TLS execute, un service desactive) quand on veut juste confirmer qu'un point precis a change.
 
-**Cependant, a la lecture du corps actuel du script, cette fonction n'est en realite jamais appelee avant aucune des 22 sections.** Chaque section s'execute inconditionnellement, quelle que soit la valeur de `-Category` — le parametre est accepte sans erreur, mais n'a aucun effet sur ce qui est audite. Un audit complet s'execute a chaque fois.
+```powershell
+.\Check-Security.ps1 -Category "BitLocker"
+.\Check-Security.ps1 -Category "BitLocker","TLS/SCHANNEL"
+```
 
-Si vous comptez sur `-Category` pour accelerer des re-verifications ciblees, verifiez-le sur votre propre copie du script avant de vous y fier — cela pourrait deja etre corrige dans une version plus recente que celle sur laquelle ce README a ete redige.
+C'est un `[string[]]`, donc on peut passer une ou plusieurs valeurs, separees par des virgules. Une section s'execute si *au moins une* de ses propres categories correspond partiellement a *au moins une* des valeurs passees (`-like` dans les deux sens), donc `-Category "TLS"` matche aussi la categorie `TLS/SCHANNEL`. Les valeurs acceptees sont celles du tableau de poids par categorie plus haut, plus quelques categories de controles sans poids personnalise (`System`, `Updates`, `UAC`, `Audit`, `Scheduled Tasks`, `UEFI Security`, `Windows Hello`, `Defender`) — voir l'aide integree du script (`Get-Help .\Check-Security.ps1 -Full`) pour la liste exacte sous `-Category`.
+
+Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages entre des sections qui ne tournent pas forcement ensemble, donc ils sont toujours calcules quel que soit le `-Category` passe — le filtre ne laisse jamais l'en-tete du rapport HTML ou le controle Windows Hello sans donnees.
 
 ---
 
@@ -147,7 +171,7 @@ Si vous comptez sur `-Category` pour accelerer des re-verifications ciblees, ver
    .\Check-Security.ps1 -SelfTest
    ```
 
-   Execute 39 assertions internes (fonction d'echappement HTML, rendu des badges de statut, table des poids par categorie, la fonction `ShouldRunSection` elle-meme, coherence du seuil de regression du score, et plus). Code de sortie `0` = tout passe, `1` = au moins un echec.
+   Execute 48 assertions internes (fonction d'echappement HTML, rendu des badges de statut, table des poids par categorie, la fonction `ShouldRunSection` elle-meme, coherence du seuil de regression du score, et plus). Code de sortie `0` = tout passe, `1` = au moins un echec.
 
 4. Lancer l'audit complet :
 
@@ -172,8 +196,8 @@ Si vous comptez sur `-Category` pour accelerer des re-verifications ciblees, ver
 | Parametre | Description |
 |---|---|
 | `-Silent` | Supprime la sortie console, le prompt "ouvrir dans le navigateur", et la pause ENTREE finale — pour un usage via tache planifiee. Les rapports (HTML/TXT/JSON/CSV) sont toujours generes normalement. |
-| `-SelfTest` | Execute la batterie de tests internes a 39 assertions puis quitte. Aucun droit admin requis au-dela du `#Requires` global du script, aucun rapport genere, rien de modifie. Code de sortie `0`/`1`. |
-| `-Category <nom(s)>` | Documente comme un filtre de sections — voir [Limitation connue](#limitation-connue--filtre--category) ci-dessus avant de s'y fier. |
+| `-SelfTest` | Execute la batterie de tests internes a 48 assertions puis quitte. Aucun droit admin requis au-dela du `#Requires` global du script, aucun rapport genere, rien de modifie. Code de sortie `0`/`1`. |
+| `-Category <nom(s)>` | Ne relance que les sections correspondantes — voir [Utiliser le filtre -Category](#utiliser-le-filtre--category) ci-dessus. |
 
 **Exemples :**
 
@@ -199,8 +223,8 @@ Chaque run reel (hors `-SelfTest`) ecrit dans :
 | `Check-Security_<horodatage>.txt` | Equivalent texte brut de l'ensemble des constats |
 | `Check-Security_<horodatage>.json` | Export complet machine-readable de chaque constat |
 | `Check-Security_<horodatage>.csv` | Export tabulaire de chaque constat |
-| `_dernier_audit_baseline.json` | Instantane du dernier run uniquement, ecrase a chaque run — utilise pour calculer les deltas par controle |
-| `_historique_scores.json` | Historique glissant des 20 derniers couples (date, score) — utilise pour la sparkline de tendance |
+| `_last_audit_baseline.json` | Instantane du dernier run uniquement, ecrase a chaque run — utilise pour calculer les deltas par controle |
+| `_score_history.json` | Historique glissant des 20 derniers couples (date, score) — utilise pour la sparkline de tendance |
 
 ---
 
@@ -220,7 +244,7 @@ Chaque run reel (hors `-SelfTest`) ecrit dans :
    | Arguments | `-NoProfile -ExecutionPolicy Bypass -File "C:\Scripts\Security\Check-Security.ps1" -Silent` |
    | Executer avec les autorisations maximales | Oui |
 
-5. **Consulter d'abord le resume "Points critiques"** sur le rapport HTML de chaque machine plutot que de lire les 22 sections completes a chaque fois — c'est exactement a ca qu'il sert.
+5. **Consulter d'abord le resume "Critical points"** (le rapport est entierement en anglais depuis la v5.1.0) sur le rapport HTML de chaque machine plutot que de lire les 22 sections completes a chaque fois — c'est exactement a ca qu'il sert.
 
 6. Les rapports, la baseline et l'historique sont **propres a chaque machine** — aucune donnee n'est centralisee automatiquement. Pour une vue consolidee sur un parc, une etape de collecte separee (partage reseau, remontee de logs) devrait etre ajoutee par-dessus ce script.
 
@@ -245,13 +269,7 @@ Attendu sur toute machine autre que celle pour laquelle la liste blanche a ete c
 <details>
 <summary><strong>Le score a chute et je ne sais pas pourquoi</strong></summary>
 
-Consulter la banniere de regression du rapport HTML (affichee uniquement si la chute depasse `$ScoreRegressionThreshold`, 5 points par defaut) et la liste des deltas par controle — les deux sont calcules automatiquement par comparaison avec `_dernier_audit_baseline.json`. Une variation de 1 a 2 points entre deux runs peut etre un bruit normal dans une categorie ne comptant que quelques controles.
-</details>
-
-<details>
-<summary><strong>-Category ne semble rien changer a ce qui s'execute</strong></summary>
-
-Confirme — voir [Limitation connue](#limitation-connue--filtre--category). L'audit complet s'execute quel que soit ce parametre dans la version sur laquelle ce README a ete redige.
+Consulter la banniere de regression du rapport HTML (affichee uniquement si la chute depasse `$ScoreRegressionThreshold`, 5 points par defaut) et la liste des deltas par controle — les deux sont calcules automatiquement par comparaison avec `_last_audit_baseline.json`. Une variation de 1 a 2 points entre deux runs peut etre un bruit normal dans une categorie ne comptant que quelques controles.
 </details>
 
 <details>
@@ -262,4 +280,4 @@ Lire directement le nom de l'assertion — il pointe vers une fonction utilitair
 
 ---
 
-<sub>Check-Security — 22 sections, lecture seule, scoring pondere par categorie, confiance des certificats basee sur l'empreinte, self-test a 39 assertions.</sub>
+<sub>Check-Security — 22 sections, lecture seule, scoring pondere par categorie, confiance des certificats basee sur l'empreinte, self-test a 48 assertions.</sub>
