@@ -6,6 +6,8 @@ A comprehensive, non-invasive security audit for Windows 11 — 22 sections cove
 
 > Nothing is checked against a name. Trusted root certificates are validated by SHA-1/SHA-256 thumbprint against a manually-verified allowlist — never by their Subject CN, which any malicious self-signed certificate could copy. The score model itself was rebuilt once already after the original version produced a 1/100 score on a genuinely well-hardened machine.
 
+As of **v5.1.0**, the script's own console output, HTML/TXT/JSON/CSV reports, category names, and `-Category` values are all in English. A handful of checks whose *input* is Windows itself — `auditpol`, `vssadmin`, `wbadmin` — parse both the English and French wording those commands can return, so the script keeps working correctly on French-language Windows installs too, not just English ones.
+
 ---
 
 ## Table of contents
@@ -14,7 +16,7 @@ A comprehensive, non-invasive security audit for Windows 11 — 22 sections cove
 - [How the score works](#how-the-score-works)
 - [The 22 sections](#the-22-sections)
 - [History and regression detection](#history-and-regression-detection)
-- [Known limitation: -Category filter](#known-limitation--category-filter)
+- [Using the `-Category` filter](#using-the--category-filter)
 - [Prerequisites](#prerequisites)
 - [First run](#first-run-step-by-step)
 - [Command-line parameters](#command-line-parameters)
@@ -56,14 +58,14 @@ This is invariant to how many checks exist in each category, and one `FAIL` in a
 
 | Category | Weight | Category | Weight |
 |---|---|---|---|
-| Antivirus | 1.6 | Certificats | 1.3 |
-| BitLocker | 1.6 | Pare-feu | 1.4 |
-| VBS | 1.5 | Réseau | 1.4 |
-| Sauvegarde | 1.5 | TLS/SCHANNEL | 1.4 |
-| Politique MDP | 1.3 | Durcissement | 1.4 |
-| Comptes | 1.2 | Defender | 1.1 |
-| Services | 0.8 | Démarrage | 0.7 |
-| Logiciels | 0.5 | | |
+| Antivirus | 1.6 | Certificates | 1.3 |
+| BitLocker | 1.6 | Firewall | 1.4 |
+| VBS | 1.5 | Network | 1.4 |
+| Backup | 1.5 | TLS/SCHANNEL | 1.4 |
+| Password Policy | 1.3 | Hardening | 1.4 |
+| Accounts | 1.2 | Defender | 1.1 |
+| Services | 0.8 | Startup | 0.7 |
+| Software | 0.5 | | |
 
 The intent: a `FAIL` on BitLocker or antivirus should hurt more than a `FAIL` on "installed software" — the weights encode that judgment explicitly rather than leaving every check equally important by accident.
 
@@ -98,8 +100,25 @@ Defender path/extension/process exclusions (flagged if overly broad); Windows He
 <details>
 <summary><strong>20–22 · TLS/cipher suites, Vulnerable drivers, Shadow Copy/VSS</strong></summary>
 
-TLS 1.0/1.1 disabled and TLS 1.2/1.3 enabled at the SCHANNEL level (a missing registry key means Windows defaults apply — reported as INFO, not silently assumed safe); weak cipher suites (RC4, 3DES, DES, NULL, EXPORT) if a custom cipher policy is in effect; drivers against the Microsoft HVCI vulnerable-driver blocklist and recently-installed drivers; Volume Shadow Copy service and existing restore points (ransomware-recovery relevant).
+**TLS/SCHANNEL** — five independent checks, detailed just below the table: protocol state (TLS 1.0/1.1 disabled, TLS 1.2/1.3 enabled), a GPO-forced cipher-suite-order policy if one exists, individual legacy ciphers (RC4/DES/RC2/3DES/NULL) disabled at the registry level, weak hash algorithms (MD5/SHA-1), Diffie-Hellman minimum key length, and .NET Framework Strong Crypto on every .NET install actually present. **Drivers** against the Microsoft HVCI vulnerable-driver blocklist and recently-installed drivers. **Shadow Copy/VSS** — Volume Shadow Copy service and existing restore points (ransomware-recovery relevant).
 </details>
+
+### TLS/SCHANNEL, in more detail
+
+SCHANNEL is the low-level Windows component every TLS/SSL connection on the machine goes through — RDP, LDAPS, IIS, most .NET applications, and plenty of third-party software that doesn't bring its own TLS stack. Section 20 reads its state across five independent registry surfaces:
+
+| Check | What it means if it's weak |
+|---|---|
+| **Protocols** (TLS 1.0/1.1/1.2/1.3) | TLS 1.0/1.1 are deprecated and vulnerable to **POODLE**/**BEAST** — they should be disabled, client and server side |
+| **Cipher-suite order (GPO)** | A domain/local Group Policy can force a specific suite list; if one exists, it shouldn't contain RC4, 3DES, DES, NULL, or EXPORT |
+| **Individual legacy ciphers** | RC4, DES, RC2, Triple DES 168, and NULL can each be disabled independently at the registry level — the mechanism actually used outside a domain, separate from the GPO check above |
+| **Weak hash algorithms** | MD5 and SHA-1 are still accepted by SCHANNEL unless explicitly disabled |
+| **Diffie-Hellman min key length** | Below 2048 bits, a connection is vulnerable to a **Logjam**-style downgrade |
+| **.NET Framework Strong Crypto** | Without it, a .NET application can bypass every setting above and negotiate TLS through its own legacy stack |
+
+POODLE, BEAST, and Logjam aren't theoretical — they're named, practical attacks against exactly the defaults Windows still ships unless someone explicitly turns them off. A machine that's never been touched will show most of this section as `WARN` or `INFO` ("Windows default") — that's expected, not a bug in the audit.
+
+**Check-Security only reads this state — it never writes to the registry.** If Section 20 comes back with `WARN`s, that's a report, not a fix. To actually harden TLS/SCHANNEL on the machine, run the companion script **[Harden-TLS](https://github.com/NephVx2/Harden-TLS)** (same author, same suite), then re-run Check-Security afterward to confirm the change took effect.
 
 **Certificate trust validation, specifically:** the allowlist of "known-good" root certificates is indexed by **SHA-1/SHA-256 thumbprint**, not by Subject CN — a deliberate design choice explained directly in the script: a certificate's display name is just a string, and any self-signed certificate could set its CN to `"DigiCert Trusted Root G4"`. Matching by name would be trivially bypassable; matching by thumbprint means an entry can only be legitimate if someone has actually verified that exact certificate.
 
@@ -116,13 +135,18 @@ Every run writes its score to a rolling history file (last 20 runs) and compares
 
 ---
 
-## Known limitation: `-Category` filter
+## Using the `-Category` filter
 
-The script accepts `-Category "BitLocker","TLS/SCHANNEL"` and its help text describes it as a way to re-run only specific sections after a targeted fix, instead of the full ~3-minute audit. The underlying helper function (`ShouldRunSection`) exists, is unit-tested, and passes its own self-test assertions.
+`-Category` re-runs only the sections that match, instead of the full ~3-minute audit — handy right after a targeted fix (enabled BitLocker, ran Harden-TLS, disabled a service) when you just want to confirm that one thing changed.
 
-**However, based on reading the current script body, this function is never actually called before any of the 22 sections.** Every section runs unconditionally regardless of what `-Category` is set to — the parameter is accepted without error, but has no effect on what gets audited. A full audit runs every time.
+```powershell
+.\Check-Security.ps1 -Category "BitLocker"
+.\Check-Security.ps1 -Category "BitLocker","TLS/SCHANNEL"
+```
 
-If you rely on `-Category` to speed up targeted re-checks, verify this on your own copy of the script before depending on it — this may already be fixed in a version newer than the one this README was written against.
+It's a `[string[]]`, so pass one or more values, comma-separated. A section runs if *any* of its own categories partially matches *any* value you pass (`-like` on both sides), so `-Category "TLS"` also matches the `TLS/SCHANNEL` category. The accepted values are the same ones in the score-by-category table above, plus a few checks-only categories that don't carry a custom weight (`System`, `Updates`, `UAC`, `Audit`, `Scheduled Tasks`, `UEFI Security`, `Windows Hello`, `Defender`) — see the script's own help (`Get-Help .\Check-Security.ps1 -Full`) for the exact list under `-Category`.
+
+Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are shared between sections that don't otherwise run together, so they're always computed regardless of which `-Category` you pass — filtering never leaves the HTML report's header or the Windows Hello check with missing data.
 
 ---
 
@@ -147,7 +171,7 @@ If you rely on `-Category` to speed up targeted re-checks, verify this on your o
    .\Check-Security.ps1 -SelfTest
    ```
 
-   Runs 39 internal assertions (HTML-escaping helper, status-badge rendering, category weights table, the `ShouldRunSection` helper itself, score-regression threshold sanity, and more). Exit code `0` = all passed, `1` = at least one failure.
+   Runs 44 internal assertions (HTML-escaping helper, status-badge rendering, category weights table, the `ShouldRunSection` helper itself, score-regression threshold sanity, and more). Exit code `0` = all passed, `1` = at least one failure.
 
 4. Run the full audit:
 
@@ -172,8 +196,8 @@ If you rely on `-Category` to speed up targeted re-checks, verify this on your o
 | Parameter | Description |
 |---|---|
 | `-Silent` | Suppresses console output, the "open in browser" prompt, and the final ENTER pause — for scheduled-task use. Reports (HTML/TXT/JSON/CSV) are still generated normally. |
-| `-SelfTest` | Runs the 39-assertion internal test suite and exits. No admin rights required beyond the script-wide `#Requires`, no reports generated, nothing modified. Exit code `0`/`1`. |
-| `-Category <name(s)>` | Documented as a section filter — see [Known limitation](#known-limitation--category-filter) above before relying on it. |
+| `-SelfTest` | Runs the 48-assertion internal test suite and exits. No admin rights required beyond the script-wide `#Requires`, no reports generated, nothing modified. Exit code `0`/`1`. |
+| `-Category <name(s)>` | Runs only the matching sections instead of the full audit — see [Using the -Category filter](#using-the--category-filter) above. |
 
 **Examples:**
 
@@ -199,8 +223,8 @@ Every real run (not `-SelfTest`) writes to:
 | `Check-Security_<timestamp>.txt` | Plain-text equivalent of the full findings |
 | `Check-Security_<timestamp>.json` | Full machine-readable export of every finding |
 | `Check-Security_<timestamp>.csv` | Tabular export of every finding |
-| `_dernier_audit_baseline.json` | Snapshot of the last run only, overwritten every run — used to compute per-check deltas |
-| `_historique_scores.json` | Rolling history of the last 20 (date, score) pairs — used for the trend sparkline |
+| `_last_audit_baseline.json` | Snapshot of the last run only, overwritten every run — used to compute per-check deltas |
+| `_score_history.json` | Rolling history of the last 20 (date, score) pairs — used for the trend sparkline |
 
 ---
 
@@ -220,7 +244,7 @@ Every real run (not `-SelfTest`) writes to:
    | Arguments | `-NoProfile -ExecutionPolicy Bypass -File "C:\Scripts\Security\Check-Security.ps1" -Silent` |
    | Run with highest privileges | Yes |
 
-5. **Review the "Points critiques" summary first** on each machine's HTML report rather than reading the full 22 sections every time — that's exactly what it's there for.
+5. **Review the "Critical points" summary first** on each machine's HTML report rather than reading the full 22 sections every time — that's exactly what it's there for.
 
 6. Reports, baseline, and history are **local to each machine** — no data is centralized automatically. For a fleet-wide view, a separate collection step (network share, log shipping) would need to be added on top of this script.
 
@@ -245,13 +269,7 @@ Expected on any machine other than the one the allowlist was built for (see [Mul
 <details>
 <summary><strong>The score dropped and I don't know why</strong></summary>
 
-Check the HTML report's regression banner (only shown if the drop exceeds `$ScoreRegressionThreshold`, 5 points by default) and the per-check delta list — both are computed automatically by comparing against `_dernier_audit_baseline.json`. A 1–2 point wobble between runs can be normal noise in a category with only a couple of checks.
-</details>
-
-<details>
-<summary><strong>-Category doesn't seem to change what runs</strong></summary>
-
-Confirmed — see [Known limitation](#known-limitation--category-filter). The full audit runs regardless of this parameter in the version this README was written against.
+Check the HTML report's regression banner (only shown if the drop exceeds `$ScoreRegressionThreshold`, 5 points by default) and the per-check delta list — both are computed automatically by comparing against `_last_audit_baseline.json`. A 1–2 point wobble between runs can be normal noise in a category with only a couple of checks.
 </details>
 
 <details>
@@ -262,4 +280,4 @@ Read the assertion name directly — it points at a specific broken helper funct
 
 ---
 
-<sub>Check-Security — 22 sections, read-only, category-weighted scoring, thumbprint-based certificate trust, 39-assertion self-test.</sub>
+<sub>Check-Security — 22 sections, read-only, category-weighted scoring, thumbprint-based certificate trust, 44-assertion self-test.</sub>
