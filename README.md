@@ -13,6 +13,7 @@ As of **v5.1.0**, the script's own console output, HTML/TXT/JSON/CSV reports, ca
 ## Table of contents
 
 - [Overview](#overview)
+- [Screenshots](#screenshots)
 - [How the score works](#how-the-score-works)
 - [The 22 sections](#the-22-sections)
 - [History and regression detection](#history-and-regression-detection)
@@ -33,6 +34,17 @@ As of **v5.1.0**, the script's own console output, HTML/TXT/JSON/CSV reports, ca
 It is entirely **read-only**. No check modifies a setting, stops a service, or writes to the registry outside of its own report/history files — it only reads and reports.
 
 Each finding is recorded with a category, a status (`OK` / `WARN` / `FAIL` / `INFO`), and a plain-language detail. These roll up into a single **weighted score out of 100**, and every run is compared against the previous one to surface what changed.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/01-banner-sysinfo.png" alt="Console banner and System info section" width="800"><br>
+  <img src="screenshots/06-html-report.png" alt="HTML report overview" width="800">
+</p>
+
+More in [`screenshots/`](screenshots/) — console output, section-by-section, and the full HTML report.
 
 ---
 
@@ -79,6 +91,21 @@ The intent: a `FAIL` on BitLocker or antivirus should hurt more than a `FAIL` on
 System info + Authenticode signature of the script itself; last patch age (WARN >30 days, FAIL >60); per-profile firewall status and rule classification by publisher (Microsoft-signed → INFO, third-party/unsigned → WARN); Defender real-time protection, last scan age (WARN >7 days, FAIL >30), 30-day threat detection history; local accounts, password policy, and the built-in Administrator (RID-500) account specifically.
 </details>
 
+### Password Policy, in more detail
+
+**This checks the local policy Windows would enforce on a *future* password change — not your current password.** `Minimum length required by local policy: 0 characters` (the Windows out-of-box default) doesn't mean your actual password is 0 characters, or that anything about it is weak — it means that if this account's password were changed tomorrow, Windows wouldn't enforce any minimum at all. You can have a strong, long password in place right now despite a permissive policy here; the script says so explicitly in each result's detail text.
+
+| Check | What it reports |
+|---|---|
+| **Minimum length** | `WARN` below 12 characters — see below for why |
+| **Maximum / minimum password age** | Informational — how often Windows would force a change, and the minimum delay before changing again |
+| **Lockout threshold** | `WARN` if disabled (`0` attempts) — no automatic lockout after repeated failed sign-ins |
+| **Lockout duration** | `WARN` if configured but under 5 minutes — long enough to blunt rapid brute-force bursts |
+
+**Why 12 characters, specifically?** That's current mainstream guidance (NIST SP 800-63B, CISA, ANSSI) — the older "8 characters" standard dates from when offline cracking was far slower. On modern GPU hardware, an 8-character NTLM hash — complex or not — can fall to brute force in hours; every additional character multiplies the search space by roughly 95 (the printable ASCII range). 12 is roughly the point where even a sustained offline attack stops being economically worth it, which is why the general trend (NIST included) has shifted from "mandatory complexity" to "length first."
+
+If you want to raise it: `net accounts /minpwlen:12` (adjust the number to taste). This is a policy setting, not a fix for anything actively broken — treat a `WARN` here as a recommendation, not an error.
+
 <details>
 <summary><strong>6–10 · UAC, BitLocker, Network, Services, Audit logs</strong></summary>
 
@@ -116,6 +143,8 @@ SCHANNEL is the low-level Windows component every TLS/SSL connection on the mach
 | **Diffie-Hellman min key length** | Below 2048 bits, a connection is vulnerable to a **Logjam**-style downgrade |
 | **.NET Framework Strong Crypto** | Without it, a .NET application can bypass every setting above and negotiate TLS through its own legacy stack |
 
+<p align="center"><img src="screenshots/03-tls-schannel.png" alt="Console output of the TLS/SCHANNEL section" width="700"></p>
+
 POODLE, BEAST, and Logjam aren't theoretical — they're named, practical attacks against exactly the defaults Windows still ships unless someone explicitly turns them off. A machine that's never been touched will show most of this section as `WARN` or `INFO` ("Windows default") — that's expected, not a bug in the audit.
 
 **Check-Security only reads this state — it never writes to the registry.** If Section 20 comes back with `WARN`s, that's a report, not a fix. To actually harden TLS/SCHANNEL on the machine, run the companion script **[Harden-TLS](https://github.com/NephVx2/Harden-TLS)** (same author, same suite), then re-run Check-Security afterward to confirm the change took effect.
@@ -147,6 +176,8 @@ Every run writes its score to a rolling history file (last 20 runs) and compares
 It's a `[string[]]`, so pass one or more values, comma-separated. A section runs if *any* of its own categories partially matches *any* value you pass (`-like` on both sides), so `-Category "TLS"` also matches the `TLS/SCHANNEL` category. The accepted values are the same ones in the score-by-category table above, plus a few checks-only categories that don't carry a custom weight (`System`, `Updates`, `UAC`, `Audit`, `Scheduled Tasks`, `UEFI Security`, `Windows Hello`, `Defender`) — see the script's own help (`Get-Help .\Check-Security.ps1 -Full`) for the exact list under `-Category`.
 
 Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are shared between sections that don't otherwise run together, so they're always computed regardless of which `-Category` you pass — filtering never leaves the HTML report's header or the Windows Hello check with missing data.
+
+<p align="center"><img src="screenshots/04-run-category.png" alt="Console output of a -Category filtered run" width="700"></p>
 
 ---
 
