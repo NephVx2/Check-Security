@@ -1116,7 +1116,7 @@ param(
 $ScriptVersion  = "5.4.0"
 $ReportDate     = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $ReportName     = "Check-Security_$ReportDate"
-$OutputDir      = "$env:USERPROFILE\Desktop\Rapports_Maintenance\Check-Security"
+$OutputDir      = "$env:USERPROFILE\Desktop\Maintenance_Reports\Check-Security"
 $ReportHTML     = "$OutputDir\$ReportName.html"
 $ReportTXT      = "$OutputDir\$ReportName.txt"
 $ReportJSON     = "$OutputDir\$ReportName.json"
