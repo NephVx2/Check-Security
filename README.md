@@ -216,9 +216,15 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 
    Still blocked? See the [step-by-step guide](https://github.com/NephVx2/Script-blocked-Look-at-this).
 
-   Runs 44 internal assertions (HTML-escaping helper, status-badge rendering, category weights table, the `ShouldRunSection` helper itself, score-regression threshold sanity, and more). Exit code `0` = all passed, `1` = at least one failure.
+4. First run the self-test — no files written, no system modifications:
 
-4. Run the full audit:
+   ```powershell
+   .\Check-Security.ps1 -SelfTest
+   ```
+   
+  Executes 48 internal assertions (HTML escape function, status badge rendering, weight table by category, ShouldRunSection function itself, score regression threshold consistency, and more). Output code 0 = everything passes, 1 = at least one failure.
+
+5. Run the full audit:
 
    ```powershell
    .\Check-Security.ps1
@@ -226,13 +232,13 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 
    Takes roughly a few minutes depending on the machine (event log queries and certificate enumeration are usually the slowest steps). Watch the console for a live `[OK]`/`[WARN]`/`[FAIL]`/`[INFO]` stream as each section completes.
 
-5. When it finishes, the console prints a final banner with the weighted score, followed by up to 5 `FAIL` and 5 `WARN` findings for an immediate read without opening the HTML report.
+6. When it finishes, the console prints a final banner with the weighted score, followed by up to 5 `FAIL` and 5 `WARN` findings for an immediate read without opening the HTML report.
 
-6. Open the generated HTML report (the script offers to do this automatically unless `-Silent` is used) — start with the "Critical points" block at the top, then use the search box to jump to any specific check.
+7. Open the generated HTML report (the script offers to do this automatically unless `-Silent` is used) — start with the "Critical points" block at the top, then use the search box to jump to any specific check.
 
-7. On the **second and subsequent runs**, the console and HTML report will additionally show what changed since last time, and a regression banner if the score dropped by more than 5 points.
+8. On the **second and subsequent runs**, the console and HTML report will additionally show what changed since last time, and a regression banner if the score dropped by more than 5 points.
 
-8. If a specific `FAIL` needs a source-verified answer (e.g. "is this root certificate legitimate?"), don't just trust the report — cross-check the certificate thumbprint against Microsoft's or the vendor's own published list before adding it to the allowlist in the script.
+9. If a specific `FAIL` needs a source-verified answer (e.g. "is this root certificate legitimate?"), don't just trust the report — cross-check the certificate thumbprint against Microsoft's or the vendor's own published list before adding it to the allowlist in the script.
 
 ---
 
