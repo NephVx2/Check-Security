@@ -40,8 +40,8 @@ Each finding is recorded with a category, a status (`OK` / `WARN` / `FAIL` / `IN
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/01-banner-sysinfo.png" alt="Console banner and System info section" width="800"><br>
-  <img src="screenshots/06-html-report.png" alt="HTML report overview" width="800">
+  <img src="https://raw.githubusercontent.com/NephVx2/Check-Security/main/screenshots/01-banner-sysinfo.png" width="49%">
+  <img src="https://raw.githubusercontent.com/NephVx2/Check-Security/main/screenshots/06-html-report.png" width="49%">
 </p>
 
 More in [`screenshots/`](screenshots/) — console output, section-by-section, and the full HTML report.
