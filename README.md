@@ -194,13 +194,27 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 
 1. Copy `Check-Security.ps1` to the target machine.
 
-2. Open PowerShell **as Administrator** manually — the script requires elevation up front and does not self-elevate.
+2. Open PowerShell **as Administrator** — the script requires elevation up front and does not self-elevate.
 
-3. Run the self-test first — no reports written, no registry/WMI queries, nothing modified:
+   Then go to the folder that contains the script (adjust the path; keep the quotes if it contains spaces):
 
    ```powershell
-   .\Check-Security.ps1 -SelfTest
+   cd "$HOME\Downloads"
    ```
+
+3. **Unblock the script** if you downloaded it from the Internet. Windows flags downloaded files, and PowerShell's execution policy (`RemoteSigned`, for example) refuses to run a flagged script. In that same Administrator window, from the script's folder:
+
+   ```powershell
+   Unblock-File .\Check-Security.ps1
+   ```
+
+   If PowerShell says instead that running scripts is disabled on this system (the Windows default policy is `Restricted`), allow scripts for the current account first (the change applies to this account only, not to the whole machine):
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+   ```
+
+   Still blocked? See the [step-by-step guide](https://github.com/NephVx2/Script-blocked-Look-at-this).
 
    Runs 44 internal assertions (HTML-escaping helper, status-badge rendering, category weights table, the `ShouldRunSection` helper itself, score-regression threshold sanity, and more). Exit code `0` = all passed, `1` = at least one failure.
 
