@@ -40,8 +40,8 @@ Chaque constat est enregistre avec une categorie, un statut (`OK` / `WARN` / `FA
 ## Captures d'ecran
 
 <p align="center">
-  <img src="screenshots/01-banner-sysinfo.png" alt="Banniere console et section Informations systeme" width="800"><br>
-  <img src="screenshots/06-html-report.png" alt="Vue d'ensemble du rapport HTML" width="800">
+  <img src="https://raw.githubusercontent.com/NephVx2/Check-Security/main/screenshots/01-banner-sysinfo.png" width="49%">
+  <img src="https://raw.githubusercontent.com/NephVx2/Check-Security/main/screenshots/06-html-report.png" width="49%">
 </p>
 
 Davantage dans [`screenshots/`](screenshots/) — sortie console section par section, et le rapport HTML complet.
