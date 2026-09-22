@@ -194,17 +194,37 @@ Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages ent
 
 1. Copier `Check-Security.ps1` sur la machine cible.
 
-2. Ouvrir PowerShell **en tant qu'Administrateur** manuellement — le script exige l'elevation des le depart et ne s'auto-eleve pas.
+2. Ouvrir PowerShell **en tant qu'Administrateur** — le script exige l'elevation des le depart et ne s'auto-eleve pas.
 
-3. Lancer d'abord le self-test — aucun rapport ecrit, aucune requete registre/WMI, rien de modifie :
+   Puis se placer dans le dossier qui contient le script (adapter le chemin ; garder les guillemets s'il contient des espaces) :
+
+   ```powershell
+   cd "$HOME\Downloads"
+   ```
+
+3. **Debloquer le script** s'il a ete telecharge depuis Internet. Windows marque les fichiers telecharges, et la politique d'execution de PowerShell (`RemoteSigned`, par exemple) refuse de lancer un script marque. Dans cette meme fenetre Administrateur, depuis le dossier du script :
+
+   ```powershell
+   Unblock-File .\Check-Security.ps1
+   ```
+
+   Si PowerShell indique plutot que l'execution de scripts est desactivee sur ce systeme (la politique par defaut de Windows est `Restricted`), autoriser d'abord les scripts pour le compte courant (la modification ne s'applique qu'a ce compte, pas a toute la machine) :
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+   ```
+
+   Toujours bloque ? Voir le [guide pas a pas](https://github.com/NephVx2/Script-blocked-Look-at-this/blob/main/README_POWERSHELL_FRENCH.md).
+
+4. Lancer d'abord le self-test — aucun fichier ecrit, aucune modification systeme :
 
    ```powershell
    .\Check-Security.ps1 -SelfTest
    ```
+   
+   Execute 48 assertions internes (fonction d'echappement HTML, rendu des badges de statut, table des poids par categorie, la fonction ShouldRunSection elle-meme, coherence du seuil de regression du score, et plus). Code de sortie 0 = tout passe, 1 = au moins un echec.
 
-   Execute 48 assertions internes (fonction d'echappement HTML, rendu des badges de statut, table des poids par categorie, la fonction `ShouldRunSection` elle-meme, coherence du seuil de regression du score, et plus). Code de sortie `0` = tout passe, `1` = au moins un echec.
-
-4. Lancer l'audit complet :
+5. Lancer l'audit complet :
 
    ```powershell
    .\Check-Security.ps1
@@ -212,13 +232,13 @@ Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages ent
 
    Prend environ quelques minutes selon la machine (les requetes de journaux d'evenements et l'enumeration des certificats sont generalement les etapes les plus lentes). Suivre en console le flux en direct `[OK]`/`[WARN]`/`[FAIL]`/`[INFO]` a mesure que chaque section se termine.
 
-5. A la fin, la console affiche une banniere finale avec le score pondere, suivie de jusqu'a 5 constats `FAIL` et 5 `WARN` pour une lecture immediate sans ouvrir le rapport HTML.
+6. A la fin, la console affiche une banniere finale avec le score pondere, suivie de jusqu'a 5 constats `FAIL` et 5 `WARN` pour une lecture immediate sans ouvrir le rapport HTML.
 
-6. Ouvrir le rapport HTML genere (le script propose de le faire automatiquement sauf si `-Silent` est utilise) — commencer par le bloc "Points critiques" en haut, puis utiliser la barre de recherche pour sauter vers un controle specifique.
+7. Ouvrir le rapport HTML genere (le script propose de le faire automatiquement sauf si `-Silent` est utilise) — commencer par le bloc "Points critiques" en haut, puis utiliser la barre de recherche pour sauter vers un controle specifique.
 
-7. Sur les **deuxieme run et suivants**, la console et le rapport HTML afficheront en plus ce qui a change depuis la derniere fois, et une banniere de regression si le score a chute de plus de 5 points.
+8. Sur les **deuxieme run et suivants**, la console et le rapport HTML afficheront en plus ce qui a change depuis la derniere fois, et une banniere de regression si le score a chute de plus de 5 points.
 
-8. Si un `FAIL` specifique necessite une reponse verifiee a la source (ex : "ce certificat racine est-il legitime ?"), ne pas se fier uniquement au rapport — verifier l'empreinte du certificat par rapport a la liste publiee par Microsoft ou l'editeur lui-meme avant de l'ajouter a la liste blanche dans le script.
+9. Si un `FAIL` specifique necessite une reponse verifiee a la source (ex : "ce certificat racine est-il legitime ?"), ne pas se fier uniquement au rapport — verifier l'empreinte du certificat par rapport a la liste publiee par Microsoft ou l'editeur lui-meme avant de l'ajouter a la liste blanche dans le script.
 
 ---
 
