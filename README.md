@@ -185,7 +185,7 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 
 - Windows 11 (the script checks the build number and reports `FAIL` if run on an older OS — it still runs, but flags itself as out of its intended scope).
 - PowerShell 5.1 (built into Windows) or PowerShell 7+.
-- Administrator rights (`#Requires -RunAsAdministrator` — the script will refuse to start without them; there is no self-elevation logic, unlike some other scripts in this suite).
+- Administrator rights (the script auto-elevates via a UAC prompt if launched from a non-elevated session).
 - If the script is digitally signed (recommended in environments using `-ExecutionPolicy AllSigned`/`RemoteSigned`): the signing certificate must be trusted on the target machine.
 
 ---
@@ -194,7 +194,7 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 
 1. Copy `Check-Security.ps1` to the target machine.
 
-2. Open PowerShell **as Administrator** — the script requires elevation up front and does not self-elevate.
+2. Open PowerShell (elevation isn't required to launch it — the script self-elevates via a UAC prompt on its own).
 
    Then go to the folder that contains the script (adjust the path; keep the quotes if it contains spaces):
 
@@ -247,7 +247,7 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 | Parameter | Description |
 |---|---|
 | `-Silent` | Suppresses console output, the "open in browser" prompt, and the final ENTER pause — for scheduled-task use. Reports (HTML/TXT/JSON/CSV) are still generated normally. |
-| `-SelfTest` | Runs the 48-assertion internal test suite and exits. No admin rights required beyond the script-wide `#Requires`, no reports generated, nothing modified. Exit code `0`/`1`. |
+| `-SelfTest` | Runs the 48-assertion internal test suite and exits. Goes through the same UAC auto-elevation as a normal run, no reports generated, nothing modified. Exit code `0`/`1`. |
 | `-Category <name(s)>` | Runs only the matching sections instead of the full audit — see [Using the -Category filter](#using-the--category-filter) above. |
 
 **Examples:**
@@ -287,7 +287,7 @@ Every real run (not `-SelfTest`) writes to:
 
 3. **Run `-SelfTest` first** on each machine to confirm the script itself is intact before relying on a full audit.
 
-4. **Schedule via Windows Task Scheduler** with `-Silent`, running as Administrator (required — the script has no self-elevation, so the task itself must already run elevated):
+4. **Schedule via Windows Task Scheduler** with `-Silent` and **Run with highest privileges** checked. A scheduled task runs non-interactively, so the script's own UAC auto-elevation prompt has nothing to show and nowhere to go — the task itself must already be configured to run elevated:
 
    | Field | Value |
    |---|---|
@@ -308,7 +308,7 @@ Every real run (not `-SelfTest`) writes to:
 <details>
 <summary><strong>The script won't start at all</strong></summary>
 
-It requires Administrator rights up front (`#Requires -RunAsAdministrator`) and does not self-elevate — right-click PowerShell and choose "Run as administrator" before launching it, or launch from an already-elevated terminal.
+Since v5.4.1 the script self-elevates: a UAC prompt should appear automatically if you launched it from a non-elevated session. If nothing happens, you likely declined that prompt — relaunch and accept it. In a non-interactive context (a scheduled task, a remote session with no desktop) the UAC prompt has nowhere to display; make sure the task/session itself is already configured to run elevated (see the Task Scheduler entry above).
 </details>
 
 <details>
