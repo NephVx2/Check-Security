@@ -185,7 +185,7 @@ Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages ent
 
 - Windows 11 (le script verifie le numero de build et rapporte `FAIL` s'il est execute sur un OS plus ancien — il continue de s'executer, mais se signale lui-meme comme hors de son perimetre prevu).
 - PowerShell 5.1 (integre a Windows) ou PowerShell 7+.
-- Droits administrateur (`#Requires -RunAsAdministrator` — le script refusera de demarrer sans, il n'y a pas de logique d'auto-elevation, contrairement a d'autres scripts de cette suite).
+- Droits administrateur (le script s'auto-eleve via une invite UAC s'il est lance depuis une session non elevee).
 - Si le script est signe numeriquement (recommande en environnement `-ExecutionPolicy AllSigned`/`RemoteSigned`) : le certificat de signature doit etre approuve sur la machine cible.
 
 ---
@@ -194,7 +194,7 @@ Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages ent
 
 1. Copier `Check-Security.ps1` sur la machine cible.
 
-2. Ouvrir PowerShell **en tant qu'Administrateur** — le script exige l'elevation des le depart et ne s'auto-eleve pas.
+2. Ouvrir PowerShell (l'elevation n'est pas necessaire pour le lancer — le script s'auto-eleve lui-meme via une invite UAC).
 
    Puis se placer dans le dossier qui contient le script (adapter le chemin ; garder les guillemets s'il contient des espaces) :
 
@@ -247,7 +247,7 @@ Deux etats ($OS/$CS/$BIOS/$CPU, et la detection Windows Hello) sont partages ent
 | Parametre | Description |
 |---|---|
 | `-Silent` | Supprime la sortie console, le prompt "ouvrir dans le navigateur", et la pause ENTREE finale — pour un usage via tache planifiee. Les rapports (HTML/TXT/JSON/CSV) sont toujours generes normalement. |
-| `-SelfTest` | Execute la batterie de tests internes a 48 assertions puis quitte. Aucun droit admin requis au-dela du `#Requires` global du script, aucun rapport genere, rien de modifie. Code de sortie `0`/`1`. |
+| `-SelfTest` | Execute la batterie de tests internes a 48 assertions puis quitte. Passe par la meme auto-elevation UAC qu'un lancement normal, aucun rapport genere, rien de modifie. Code de sortie `0`/`1`. |
 | `-Category <nom(s)>` | Ne relance que les sections correspondantes — voir [Utiliser le filtre -Category](#utiliser-le-filtre--category) ci-dessus. |
 
 **Exemples :**
@@ -287,7 +287,7 @@ Chaque run reel (hors `-SelfTest`) ecrit dans :
 
 3. **Executer `-SelfTest` en premier** sur chaque machine pour confirmer que le script lui-meme est intact avant de se fier a un audit complet.
 
-4. **Planifier via le Planificateur de taches Windows** avec `-Silent`, en s'executant en tant qu'Administrateur (obligatoire — le script n'a pas d'auto-elevation, donc la tache elle-meme doit deja s'executer elevee) :
+4. **Planifier via le Planificateur de taches Windows** avec `-Silent` et la case **Executer avec les autorisations maximales** cochee. Une tache planifiee s'execute sans session interactive, donc l'invite UAC d'auto-elevation du script n'a rien ou nulle part ou s'afficher — la tache elle-meme doit deja etre configuree pour s'executer elevee :
 
    | Champ | Valeur |
    |---|---|
@@ -308,7 +308,7 @@ Chaque run reel (hors `-SelfTest`) ecrit dans :
 <details>
 <summary><strong>Le script ne demarre pas du tout</strong></summary>
 
-Il exige les droits Administrateur des le depart (`#Requires -RunAsAdministrator`) et ne s'auto-eleve pas — faire un clic droit sur PowerShell et choisir "Executer en tant qu'administrateur" avant de le lancer, ou lancer depuis un terminal deja eleve.
+Depuis la v5.4.1 le script s'auto-eleve : une invite UAC doit apparaitre automatiquement s'il est lance depuis une session non elevee. Si rien ne se passe, l'invite a probablement ete refusee — relancer et l'accepter. Dans un contexte non interactif (tache planifiee, session distante sans bureau), l'invite UAC n'a nulle part ou s'afficher ; verifier que la tache/session elle-meme est deja configuree pour s'executer elevee (voir l'entree Planificateur de taches ci-dessus).
 </details>
 
 <details>
