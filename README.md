@@ -100,7 +100,7 @@ System info + Authenticode signature of the script itself; last patch age (WARN 
 | **Minimum length** | `WARN` below 12 characters — see below for why |
 | **Maximum / minimum password age** | Informational — how often Windows would force a change, and the minimum delay before changing again |
 | **Lockout threshold** | `WARN` if disabled (`0` attempts) — no automatic lockout after repeated failed sign-ins |
-| **Lockout duration** | `WARN` if configured but under 5 minutes — long enough to blunt rapid brute-force bursts |
+| **Lockout duration** | `WARN` if configured at under 5 minutes — too short to effectively blunt rapid brute-force bursts |
 
 **Why 12 characters, specifically?** That's current mainstream guidance (NIST SP 800-63B, CISA, ANSSI) — the older "8 characters" standard dates from when offline cracking was far slower. On modern GPU hardware, an 8-character NTLM hash — complex or not — can fall to brute force in hours; every additional character multiplies the search space by roughly 95 (the printable ASCII range). 12 is roughly the point where even a sustained offline attack stops being economically worth it, which is why the general trend (NIST included) has shifted from "mandatory complexity" to "length first."
 
