@@ -6,7 +6,7 @@ A comprehensive, non-invasive security audit for Windows 11 — 22 sections cove
 
 > Nothing is checked against a name. Trusted root certificates are validated by SHA-1/SHA-256 thumbprint against a manually-verified allowlist — never by their Subject CN, which any malicious self-signed certificate could copy. The score model itself was rebuilt once already after the original version produced a 1/100 score on a genuinely well-hardened machine.
 
-As of **v5.1.0**, the script's own console output, HTML/TXT/JSON/CSV reports, category names, and `-Category` values are all in English. A handful of checks whose *input* is Windows itself — `auditpol`, `vssadmin`, `wbadmin` — parse both the English and French wording those commands can return, so the script keeps working correctly on French-language Windows installs too, not just English ones.
+As of **v5.1.0**, the script's own console output, HTML/TXT/JSON/CSV reports, category names, and `-Category` values are all in English. A handful of checks whose *input* is Windows itself — `auditpol`, `wbadmin` — parse both the English and French wording those commands can return, so the script keeps working correctly on French-language Windows installs too, not just English ones. Shadow copies no longer depend on text parsing at all: since **v5.4.2** they are read through CIM (`Win32_ShadowCopy` / `Win32_ShadowStorage`), which is language-independent — `vssadmin` is kept only as a fallback.
 
 ---
 
@@ -127,7 +127,7 @@ Defender path/extension/process exclusions (flagged if overly broad); Windows He
 <details>
 <summary><strong>20–22 · TLS/cipher suites, Vulnerable drivers, Shadow Copy/VSS</strong></summary>
 
-**TLS/SCHANNEL** — five independent checks, detailed just below the table: protocol state (TLS 1.0/1.1 disabled, TLS 1.2/1.3 enabled), a GPO-forced cipher-suite-order policy if one exists, individual legacy ciphers (RC4/DES/RC2/3DES/NULL) disabled at the registry level, weak hash algorithms (MD5/SHA-1), Diffie-Hellman minimum key length, and .NET Framework Strong Crypto on every .NET install actually present. **Drivers** against the Microsoft HVCI vulnerable-driver blocklist and recently-installed drivers. **Shadow Copy/VSS** — Volume Shadow Copy service and existing restore points (ransomware-recovery relevant).
+**TLS/SCHANNEL** — five independent checks, detailed just below the table: protocol state (TLS 1.0/1.1 disabled, TLS 1.2/1.3 enabled), a GPO-forced cipher-suite-order policy if one exists, individual legacy ciphers (RC4/DES/RC2/3DES/NULL) disabled at the registry level, weak hash algorithms (MD5/SHA-1), Diffie-Hellman minimum key length, and .NET Framework Strong Crypto on every .NET install actually present. **Drivers** against the Microsoft HVCI vulnerable-driver blocklist and recently-installed drivers. **Shadow Copy/VSS** — Volume Shadow Copy service, local snapshots of `C:`, the space reserved for snapshots on each volume, and system image backups (`wbadmin`) — all ransomware-recovery relevant, detailed [below](#shadow-copyvss-in-more-detail).
 </details>
 
 ### TLS/SCHANNEL, in more detail
@@ -150,6 +150,23 @@ POODLE, BEAST, and Logjam aren't theoretical — they're named, practical attack
 **Check-Security only reads this state — it never writes to the registry.** If Section 20 comes back with `WARN`s, that's a report, not a fix. To actually harden TLS/SCHANNEL on the machine, run the companion script **[Harden-TLS](https://github.com/NephVx2/Harden-TLS)** (same author, same suite), then re-run Check-Security afterward to confirm the change took effect.
 
 **Certificate trust validation, specifically:** the allowlist of "known-good" root certificates is indexed by **SHA-1/SHA-256 thumbprint**, not by Subject CN — a deliberate design choice explained directly in the script: a certificate's display name is just a string, and any self-signed certificate could set its CN to `"DigiCert Trusted Root G4"`. Matching by name would be trivially bypassable; matching by thumbprint means an entry can only be legitimate if someone has actually verified that exact certificate.
+
+### Shadow Copy/VSS, in more detail
+
+Section 22 answers one question: *if ransomware encrypted this machine tonight, what could you get back?* Ransomware routinely deletes local shadow copies first, so the answer depends on more than one thing.
+
+| Check | What it reports |
+|---|---|
+| **VSS service** | Startup type of the Volume Shadow Copy service. `Manual` is normal — it starts on demand for snapshot and backup operations |
+| **Shadow copies on C:** | Number and age of the local VSS snapshots of the system drive, read through CIM (`Win32_ShadowCopy`, filtered on the system volume). `OK` if the latest is 7 days old or less, `WARN` if older, `FAIL` if there is no snapshot and no restore point. Snapshots stored for *other* volumes are not counted here |
+| **VSS shadow storage** | Space reserved for snapshots on each volume (`Win32_ShadowStorage`). `WARN` when a limit is at least 80% used — Windows then deletes the oldest snapshots by itself, which caps your history — or when a volume has **no limit** and its snapshots already use at least 20% of the disk hosting them; `INFO` below that. The `vssadmin resize shadowstorage` command to adjust it is given in the detail |
+| **System image backup / scheduling** | `wbadmin` backup versions, age of the latest one, and the Windows Backup scheduled task |
+
+Three things worth knowing:
+
+- **Fewer snapshots than expected is usually a storage limit, not a detection problem** — see [Troubleshooting](#troubleshooting).
+- Windows' own System Restore dialog (`rstrui`, with *Show more restore points* ticked) lists real restore points **and** `wbadmin` system image backups stored on other disks, so that list is normally longer than the "Shadow copies on C:" count. Both are right; they measure different things.
+- System image backups kept on a disk that is always connected can be encrypted by the same ransomware that hits `C:`. Check-Security can't know whether your backup disk is disconnected between runs — an offline copy remains the stronger protection.
 
 ---
 
@@ -265,7 +282,7 @@ Two pieces of state ($OS/$CS/$BIOS/$CPU, and the Windows Hello detection) are sh
 Every real run (not `-SelfTest`) writes to:
 
 ```
-%USERPROFILE%\Desktop\Rapports_Maintenance\Check-Security\
+%USERPROFILE%\Desktop\Maintenance_Reports\Check-Security\
 ```
 
 | File | Content |
@@ -324,6 +341,14 @@ Check the HTML report's regression banner (only shown if the drop exceeds `$Scor
 </details>
 
 <details>
+<summary><strong>"Shadow copies on C:" shows fewer snapshots than I expected</strong></summary>
+
+Usually a storage limit, not a detection problem: when the space reserved for snapshots on `C:` fills up, Windows silently deletes the oldest snapshot to make room for each new one, so the count stays stuck around the same number. Check with `vssadmin list shadowstorage` — the "VSS shadow storage" line of the report also flags it from 80% of the limit. To keep more history, raise the limit: `vssadmin resize shadowstorage /for=C: /on=C: /maxsize=<size>`.
+
+Only snapshots of `C:` are counted on that line. Snapshots of backup volumes (`E:`, `F:`…) show up in the "VSS shadow storage" and `wbadmin` lines instead, and Windows' System Restore dialog mixes both kinds in one longer list (see [Shadow Copy/VSS, in more detail](#shadow-copyvss-in-more-detail)).
+</details>
+
+<details>
 <summary><strong>-SelfTest reports a FAIL</strong></summary>
 
 Read the assertion name directly — it points at a specific broken helper function (HTML escaping, status badge rendering, a missing category weight, etc.), not at the machine's actual security posture. This is a script self-check, unrelated to what a full audit would report.
@@ -331,4 +356,4 @@ Read the assertion name directly — it points at a specific broken helper funct
 
 ---
 
-<sub>Check-Security — 22 sections, read-only, category-weighted scoring, thumbprint-based certificate trust, 44-assertion self-test.</sub>
+<sub>Check-Security — 22 sections, read-only, category-weighted scoring, thumbprint-based certificate trust, 48-assertion self-test.</sub>
